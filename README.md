@@ -3,7 +3,7 @@
 Install the command with Node.js 20.9 or newer:
 
 ```bash
-curl -fsSL https://agora-payments.vercel.app/install.sh | bash
+(set -o pipefail; gh api repos/pkyanam/agora-cli/contents/install.sh -H 'Accept: application/vnd.github.raw+json' | bash)
 ```
 
 For a source-based install, clone this repository and run `bash install.sh`:

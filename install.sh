@@ -2,8 +2,6 @@
 set -euo pipefail
 
 REPO="pkyanam/agora-cli"
-RAW_BASE="https://raw.githubusercontent.com/$REPO"
-APP_BASE="${AGORA_SITE_BASE:-https://agora-payments.vercel.app}"
 CLI_SHA256="9d02f2635e801a6344e810bf18468df52e56cd214b6dd570991892082b45796d"
 MIN_NODE_MAJOR=20
 MIN_NODE_MINOR=9
@@ -44,39 +42,29 @@ if [[ -n "$SCRIPT_DIR" && -f "$SCRIPT_DIR/cli/agora.mjs" ]]; then
   cp "$SCRIPT_DIR/cli/agora.mjs" "$SOURCE"
 else
   REF="${AGORA_REF:-main}"
-  FETCHED=0
-  NEED_CHECKSUM=0
-  if command -v curl >/dev/null 2>&1 && curl --fail --silent --show-error --location "$APP_BASE/agora-cli.mjs" > "$SOURCE" 2>/dev/null; then
-    FETCHED=1
-    NEED_CHECKSUM=1
-  elif command -v curl >/dev/null 2>&1 && curl --fail --silent --show-error --location "$RAW_BASE/$REF/cli/agora.mjs" > "$SOURCE" 2>/dev/null; then
-    FETCHED=1
-    NEED_CHECKSUM=1
-  fi
-  if (( FETCHED == 0 )) && command -v gh >/dev/null 2>&1; then
-    : > "$SOURCE"
-    if gh api --header 'Accept: application/vnd.github.raw' "repos/$REPO/contents/cli/agora.mjs?ref=$REF" > "$SOURCE"; then
-      FETCHED=1
-      NEED_CHECKSUM=1
-    fi
-  fi
-  if (( FETCHED == 0 )); then
-    printf '%s\n' 'Could not download Agora CLI. Confirm `gh auth status` can access pkyanam/agora-cli, or retry when the public installer is available.' >&2
+  if ! command -v gh >/dev/null 2>&1; then
+    printf '%s\n' 'Install GitHub CLI (`gh`), authenticate with `gh auth login`, and retry.' >&2
     exit 1
   fi
-  if (( NEED_CHECKSUM == 1 )); then
-    if command -v shasum >/dev/null 2>&1; then
-      ACTUAL_SHA256="$(shasum -a 256 "$SOURCE" | awk '{print $1}')"
-    elif command -v sha256sum >/dev/null 2>&1; then
-      ACTUAL_SHA256="$(sha256sum "$SOURCE" | awk '{print $1}')"
-    else
-      printf '%s\n' 'Cannot verify the downloaded Agora CLI: install shasum or sha256sum, then retry.' >&2
-      exit 1
-    fi
-    if [[ "$ACTUAL_SHA256" != "$CLI_SHA256" ]]; then
-      printf '%s\n' 'The downloaded Agora CLI failed its SHA-256 check. Nothing was installed.' >&2
-      exit 1
-    fi
+  if ! gh auth status >/dev/null 2>&1; then
+    printf '%s\n' 'Agora CLI is hosted in a private GitHub repository during prerelease. Run `gh auth login` with access to pkyanam/agora-cli, then retry.' >&2
+    exit 1
+  fi
+  if ! gh api --header 'Accept: application/vnd.github.raw+json' "repos/$REPO/contents/cli/agora.mjs?ref=$REF" > "$SOURCE"; then
+    printf 'Could not download Agora CLI from GitHub. Confirm your account can access %s and retry.\n' "$REPO" >&2
+    exit 1
+  fi
+  if command -v shasum >/dev/null 2>&1; then
+    ACTUAL_SHA256="$(shasum -a 256 "$SOURCE" | awk '{print $1}')"
+  elif command -v sha256sum >/dev/null 2>&1; then
+    ACTUAL_SHA256="$(sha256sum "$SOURCE" | awk '{print $1}')"
+  else
+    printf '%s\n' 'Cannot verify the downloaded Agora CLI: install shasum or sha256sum, then retry.' >&2
+    exit 1
+  fi
+  if [[ "$ACTUAL_SHA256" != "$CLI_SHA256" ]]; then
+    printf '%s\n' 'The downloaded Agora CLI failed its SHA-256 check. Nothing was installed.' >&2
+    exit 1
   fi
 fi
 
