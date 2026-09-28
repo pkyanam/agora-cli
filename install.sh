@@ -50,8 +50,13 @@ else
     printf '%s\n' 'Agora CLI is hosted in a private GitHub repository during prerelease. Run `gh auth login` with access to pkyanam/agora-cli, then retry.' >&2
     exit 1
   fi
-  if ! gh api --header 'Accept: application/vnd.github.raw+json' "repos/$REPO/contents/cli/agora.mjs?ref=$REF" > "$SOURCE"; then
-    printf 'Could not download Agora CLI from GitHub. Confirm your account can access %s and retry.\n' "$REPO" >&2
+  REPOSITORY="$TMP_DIR/repository"
+  if ! gh repo clone "$REPO" "$REPOSITORY" >/dev/null 2>&1; then
+    printf 'Could not access %s on GitHub. Confirm your account has repository access and retry.\n' "$REPO" >&2
+    exit 1
+  fi
+  if ! git -C "$REPOSITORY" show "$REF:cli/agora.mjs" > "$SOURCE"; then
+    printf 'Could not read the Agora CLI at Git ref %s.\n' "$REF" >&2
     exit 1
   fi
   if command -v shasum >/dev/null 2>&1; then
