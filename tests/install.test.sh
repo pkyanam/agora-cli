@@ -39,73 +39,38 @@ if HOME="$TEST_HOME/other" AGORA_INSTALL_DIR="$UNRELATED_DIR" bash "$ROOT/instal
 fi
 assert_contains "$UNRELATED_DIR/agora" 'printf unrelated'
 
-# A piped install uses the app-hosted artifact only when its pinned checksum matches.
-PUBLIC_BIN="$TEST_HOME/public bin"
-mkdir -p "$PUBLIC_BIN"
-cat > "$PUBLIC_BIN/curl" <<'EOF'
+# A piped install clones the GitHub source and accepts only the pinned client.
+GH_BIN="$TEST_HOME/gh bin"
+GH_REPO="$TEST_HOME/github repo"
+mkdir -p "$GH_BIN" "$GH_REPO/cli"
+cp "$ROOT/cli/agora.mjs" "$GH_REPO/cli/agora.mjs"
+git -C "$GH_REPO" init -q -b main
+git -C "$GH_REPO" -c user.name=Test -c user.email=test@example.invalid add cli/agora.mjs
+git -C "$GH_REPO" -c user.name=Test -c user.email=test@example.invalid commit -qm fixture
+cat > "$GH_BIN/gh" <<'EOF'
 #!/usr/bin/env bash
 set -eu
-case "${*: -1}" in
-  */agora-cli.mjs) cat "$TEST_CLI_ARTIFACT" ;;
+case "$1" in
+  auth) [[ "$2" == status ]] ;;
+  repo) [[ "$2" == clone ]] && git clone -q "$TEST_GH_REPO" "$4" ;;
   *) exit 1 ;;
 esac
 EOF
-chmod 755 "$PUBLIC_BIN/curl"
-if env HOME="$TEST_HOME/public" TEST_INSTALL_SCRIPT="$ROOT/install.sh" TEST_CLI_ARTIFACT="$ROOT/cli/agora.mjs" PATH="$PUBLIC_BIN:$REAL_PATH" bash -c 'set -o pipefail; cat "$TEST_INSTALL_SCRIPT" | bash -s' >/dev/null 2>&1; then
-  assert_contains "$TEST_HOME/public/.local/bin/agora" '// Agora managed CLI (pkyanam/agora-cli)'
+chmod 755 "$GH_BIN/gh"
+if env HOME="$TEST_HOME/github" SHELL=/bin/fish AGORA_INSTALL_DIR="$TEST_HOME/github/bin" TEST_GH_REPO="$GH_REPO" TEST_INSTALL_SCRIPT="$ROOT/install.sh" PATH="$GH_BIN:$REAL_PATH" bash -c 'set -o pipefail; cat "$TEST_INSTALL_SCRIPT" | bash -s' >"$TEST_HOME/github.out" 2>&1; then
+  assert_contains "$TEST_HOME/github/bin/agora" '// Agora managed CLI (pkyanam/agora-cli)'
 else
-  fail 'Installer did not accept the checksum-pinned app-hosted CLI artifact.'
+  cat "$TEST_HOME/github.out" >&2
+  fail 'Installer did not accept the pinned client from its authenticated GitHub checkout.'
 fi
 
-cat > "$PUBLIC_BIN/curl" <<'EOF'
-#!/usr/bin/env bash
-set -eu
-case "${*: -1}" in
-  */agora-cli.mjs) printf '%s\n' 'tampered artifact' ;;
-  *) exit 1 ;;
-esac
-EOF
-chmod 755 "$PUBLIC_BIN/curl"
-if env HOME="$TEST_HOME/tampered" TEST_INSTALL_SCRIPT="$ROOT/install.sh" TEST_CLI_ARTIFACT="$ROOT/cli/agora.mjs" PATH="$PUBLIC_BIN:$REAL_PATH" bash -c 'set -o pipefail; cat "$TEST_INSTALL_SCRIPT" | bash -s' >"$TEST_HOME/tampered.out" 2>&1; then
-  fail 'Installer accepted an app-hosted artifact with the wrong checksum.'
+printf '%s\n' 'tampered artifact' > "$GH_REPO/cli/agora.mjs"
+git -C "$GH_REPO" -c user.name=Test -c user.email=test@example.invalid add cli/agora.mjs
+git -C "$GH_REPO" -c user.name=Test -c user.email=test@example.invalid commit -qm tampered
+if env HOME="$TEST_HOME/tampered" TEST_GH_REPO="$GH_REPO" TEST_INSTALL_SCRIPT="$ROOT/install.sh" PATH="$GH_BIN:$REAL_PATH" bash -c 'set -o pipefail; cat "$TEST_INSTALL_SCRIPT" | bash -s' >"$TEST_HOME/tampered.out" 2>&1; then
+  fail 'Installer accepted a GitHub client with the wrong checksum.'
 fi
 assert_contains "$TEST_HOME/tampered.out" 'failed its SHA-256 check'
-
-# Raw GitHub fallback is checked against the same pin as the app-hosted file.
-FALLBACK_BIN="$TEST_HOME/raw fallback bin"
-mkdir -p "$FALLBACK_BIN"
-cat > "$FALLBACK_BIN/curl" <<'EOF'
-#!/usr/bin/env bash
-set -eu
-case "${*: -1}" in
-  */agora-payments.vercel.app/agora-cli.mjs) exit 1 ;;
-  */cli/agora.mjs) printf '%s\n' 'tampered raw fallback' ;;
-  *) exit 1 ;;
-esac
-EOF
-chmod 755 "$FALLBACK_BIN/curl"
-if env HOME="$TEST_HOME/raw-fallback-tampered" TEST_INSTALL_SCRIPT="$ROOT/install.sh" PATH="$FALLBACK_BIN:$REAL_PATH" bash -c 'set -o pipefail; cat "$TEST_INSTALL_SCRIPT" | bash -s' >"$TEST_HOME/raw-fallback-tampered.out" 2>&1; then
-  fail 'Installer accepted a raw GitHub fallback artifact with the wrong checksum.'
-fi
-assert_contains "$TEST_HOME/raw-fallback-tampered.out" 'failed its SHA-256 check'
-
-# The authenticated GitHub CLI fallback also enforces the same checksum.
-GH_FALLBACK_BIN="$TEST_HOME/gh fallback bin"
-mkdir -p "$GH_FALLBACK_BIN"
-cat > "$GH_FALLBACK_BIN/curl" <<'EOF'
-#!/usr/bin/env bash
-exit 1
-EOF
-cat > "$GH_FALLBACK_BIN/gh" <<'EOF'
-#!/usr/bin/env bash
-set -eu
-printf '%s\n' 'tampered gh fallback'
-EOF
-chmod 755 "$GH_FALLBACK_BIN/curl" "$GH_FALLBACK_BIN/gh"
-if env HOME="$TEST_HOME/gh-fallback-tampered" TEST_INSTALL_SCRIPT="$ROOT/install.sh" PATH="$GH_FALLBACK_BIN:$REAL_PATH" bash -c 'set -o pipefail; cat "$TEST_INSTALL_SCRIPT" | bash -s' >"$TEST_HOME/gh-fallback-tampered.out" 2>&1; then
-  fail 'Installer accepted a GitHub CLI fallback artifact with the wrong checksum.'
-fi
-assert_contains "$TEST_HOME/gh-fallback-tampered.out" 'failed its SHA-256 check'
 
 # Repeat updates are allowed only for our marked CLI and are replaced atomically.
 UPDATE_REPO="$TEST_HOME/repo update"
@@ -158,7 +123,7 @@ chmod 755 "$NODE_ONLY_BIN/curl"
 if env HOME="$TEST_HOME/no-gh" SHELL=/bin/zsh TEST_INSTALL_SCRIPT="$ROOT/install.sh" PATH="$NODE_ONLY_BIN:/usr/bin:/bin" bash -c 'set -o pipefail; cat "$TEST_INSTALL_SCRIPT" | bash -s' >"$TEST_HOME/no-gh.out" 2>&1; then
   fail 'Installer unexpectedly succeeded without GitHub CLI.'
 fi
-assert_contains "$TEST_HOME/no-gh.out" 'Could not download Agora CLI'
+assert_contains "$TEST_HOME/no-gh.out" 'Install GitHub CLI'
 
 # Bash config is backed up once and receives one managed block.
 mkdir -p "$TEST_HOME/bash home"
@@ -168,4 +133,4 @@ assert_contains "$TEST_HOME/bash home/.bash_profile" 'EXISTING_SETTING=kept'
 assert_contains "$TEST_HOME/bash home/.bash_profile" '# >>> Agora CLI PATH >>>'
 [[ "$(find "$TEST_HOME/bash home" -maxdepth 1 -name '.bash_profile.agora-backup.*' | wc -l | tr -d ' ')" == 1 ]] || fail 'Existing bash profile was not backed up.'
 
-printf 'PASS: install, update, path quoting, shell backup, collision safety, pinned artifact integrity, and failed download\n'
+printf 'PASS: install, update, path quoting, shell backup, collision safety, pinned GitHub client integrity, and failed download\n'
