@@ -119,6 +119,32 @@ describe("Agora TypeScript client", () => {
     expect(refund.provider_mode).toBe("test")
   })
 
+  test("treats malformed non-2xx write responses as unknown without leaking the API key", async () => {
+    globalThis.fetch = (async () => new Response("<html>upstream error</html>", {
+      status: 502,
+      headers: { "content-type": "text/html", "x-request-id": "req_fixture_bad_json" },
+    })) as typeof fetch
+
+    const apiKey = "fixture_secret_must_not_appear"
+    const api = new Agora({ apiKey, baseUrl: "https://agora.example" })
+    try {
+      await api.payments.create(
+        { product_id: "prod_fixture" },
+        { idempotencyKey: "order-fixture-malformed" },
+      )
+      throw new Error("expected payment request to fail")
+    } catch (error) {
+      expect(error).toBeInstanceOf(AgoraError)
+      const apiError = error as AgoraError
+      expect(apiError.code).toBe("outcome_unknown")
+      expect(apiError.status).toBe(502)
+      expect(apiError.requestId).toBe("req_fixture_bad_json")
+      expect(apiError.outcomeUnknown).toBe(true)
+      expect(apiError.message).not.toContain(apiKey)
+      expect(apiError.message).not.toContain("<html>")
+    }
+  })
+
   test("marks network failures on POST as unknown and refuses insecure remote URLs", async () => {
     globalThis.fetch = (async () => { throw new Error("socket closed") }) as typeof fetch
     const api = new Agora({ apiKey: "fixture", baseUrl: "https://agora.example" })

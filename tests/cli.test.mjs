@@ -84,6 +84,22 @@ test("a provider 5xx reports unknown outcome and does not retry automatically", 
   assert.equal(idempotencyKey, "stable-order-1")
   assert.match(result.stderr, /"outcome": "unknown"/)
   assert.match(result.stderr, /reuse the same --idempotency-key/)
+  assert.doesNotMatch(result.stderr, /ag_test_fixture_only/)
+})
+
+test("a malformed provider error response reports unknown outcome without credential output", async () => {
+  const result = await withServer((_req, res) => {
+    res.writeHead(502, { "content-type": "text/html" })
+    res.end("<html>upstream error</html>")
+  }, (baseUrl) => runCli([
+    "refunds", "create", "--payment", "pay_fixture", "--amount", "100",
+    "--reason", "QA fixture", "--idempotency-key", "refund-fixture-2",
+  ], baseUrl))
+
+  assert.notEqual(result.status, 0)
+  assert.match(result.stderr, /"code": "outcome_unknown"/)
+  assert.match(result.stderr, /Check payment state before retrying/)
+  assert.doesNotMatch(result.stderr, /ag_test_fixture_only|<html>/)
 })
 
 test("remote HTTP origins are rejected before a request", async () => {
