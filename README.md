@@ -3,16 +3,18 @@
 Install the command with Node.js 20.9 or newer:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/pkyanam/agora-cli/main/install.sh | bash
+curl -fsSL https://agora-payments.vercel.app/install.sh | bash
 ```
 
-For a source-based install, clone this repository and run `bash install.sh`. During development, an authenticated GitHub CLI install is also available:
+For a source-based install, clone this repository and run `bash install.sh`:
 
 ```bash
-gh api --header 'Accept: application/vnd.github.raw' repos/pkyanam/agora-cli/contents/install.sh | bash
+gh repo clone pkyanam/agora-cli
+cd agora-cli
+bash install.sh
 ```
 
-The installer places `agora` in `~/.local/bin` or `$AGORA_INSTALL_DIR`, updates only an existing Agora-managed install, and adds one PATH block to the active zsh or bash login file. It saves a permissions-preserving backup before changing an existing shell file. It uses no sudo and stores no API credentials.
+The installer places `agora` in `~/.local/bin` or `$AGORA_INSTALL_DIR`, verifies the pinned SHA-256 of the standalone client, updates only an existing Agora-managed install, and adds one PATH block to the active zsh or bash login file. It saves a permissions-preserving backup before changing an existing shell file. It uses no sudo and stores no API credentials.
 
 ## Configure
 

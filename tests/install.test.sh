@@ -39,6 +39,38 @@ if HOME="$TEST_HOME/other" AGORA_INSTALL_DIR="$UNRELATED_DIR" bash "$ROOT/instal
 fi
 assert_contains "$UNRELATED_DIR/agora" 'printf unrelated'
 
+# A piped install uses the app-hosted artifact only when its pinned checksum matches.
+PUBLIC_BIN="$TEST_HOME/public bin"
+mkdir -p "$PUBLIC_BIN"
+cat > "$PUBLIC_BIN/curl" <<'EOF'
+#!/usr/bin/env bash
+set -eu
+case "${*: -1}" in
+  */agora-cli.mjs) cat "$TEST_CLI_ARTIFACT" ;;
+  *) exit 1 ;;
+esac
+EOF
+chmod 755 "$PUBLIC_BIN/curl"
+if env HOME="$TEST_HOME/public" TEST_INSTALL_SCRIPT="$ROOT/install.sh" TEST_CLI_ARTIFACT="$ROOT/cli/agora.mjs" PATH="$PUBLIC_BIN:$REAL_PATH" bash -c 'set -o pipefail; cat "$TEST_INSTALL_SCRIPT" | bash -s' >/dev/null 2>&1; then
+  assert_contains "$TEST_HOME/public/.local/bin/agora" '// Agora managed CLI (pkyanam/agora-cli)'
+else
+  fail 'Installer did not accept the checksum-pinned app-hosted CLI artifact.'
+fi
+
+cat > "$PUBLIC_BIN/curl" <<'EOF'
+#!/usr/bin/env bash
+set -eu
+case "${*: -1}" in
+  */agora-cli.mjs) printf '%s\n' 'tampered artifact' ;;
+  *) exit 1 ;;
+esac
+EOF
+chmod 755 "$PUBLIC_BIN/curl"
+if env HOME="$TEST_HOME/tampered" TEST_INSTALL_SCRIPT="$ROOT/install.sh" TEST_CLI_ARTIFACT="$ROOT/cli/agora.mjs" PATH="$PUBLIC_BIN:$REAL_PATH" bash -c 'set -o pipefail; cat "$TEST_INSTALL_SCRIPT" | bash -s' >"$TEST_HOME/tampered.out" 2>&1; then
+  fail 'Installer accepted an app-hosted artifact with the wrong checksum.'
+fi
+assert_contains "$TEST_HOME/tampered.out" 'failed its SHA-256 check'
+
 # Repeat updates are allowed only for our marked CLI and are replaced atomically.
 UPDATE_REPO="$TEST_HOME/repo update"
 mkdir -p "$UPDATE_REPO/cli"
@@ -62,6 +94,11 @@ case "$*" in
 esac
 EOF
 chmod 755 "$MOCK_BIN/gh"
+cat > "$MOCK_BIN/curl" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+chmod 755 "$MOCK_BIN/curl"
 if env HOME="$TEST_HOME/update" SHELL=/bin/zsh TEST_INSTALL_SCRIPT="$ROOT/install.sh" PATH="$MOCK_BIN:$REAL_PATH" bash -c 'set -o pipefail; cat "$TEST_INSTALL_SCRIPT" | bash -s' >"$TEST_HOME/download-failed.out" 2>&1; then
   fail 'Installer unexpectedly succeeded when the authenticated CLI download failed.'
 fi
@@ -77,6 +114,11 @@ assert_contains "$TEST_HOME/no-node.out" 'Node.js 20.9 or newer'
 NODE_ONLY_BIN="$TEST_HOME/node only bin"
 mkdir -p "$NODE_ONLY_BIN"
 ln -s "$(command -v node)" "$NODE_ONLY_BIN/node"
+cat > "$NODE_ONLY_BIN/curl" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+chmod 755 "$NODE_ONLY_BIN/curl"
 if env HOME="$TEST_HOME/no-gh" SHELL=/bin/zsh TEST_INSTALL_SCRIPT="$ROOT/install.sh" PATH="$NODE_ONLY_BIN:/usr/bin:/bin" bash -c 'set -o pipefail; cat "$TEST_INSTALL_SCRIPT" | bash -s' >"$TEST_HOME/no-gh.out" 2>&1; then
   fail 'Installer unexpectedly succeeded without GitHub CLI.'
 fi
@@ -90,4 +132,4 @@ assert_contains "$TEST_HOME/bash home/.bash_profile" 'EXISTING_SETTING=kept'
 assert_contains "$TEST_HOME/bash home/.bash_profile" '# >>> Agora CLI PATH >>>'
 [[ "$(find "$TEST_HOME/bash home" -maxdepth 1 -name '.bash_profile.agora-backup.*' | wc -l | tr -d ' ')" == 1 ]] || fail 'Existing bash profile was not backed up.'
 
-printf 'PASS: install, update, path quoting, shell backup, collision safety, and failed download\n'
+printf 'PASS: install, update, path quoting, shell backup, collision safety, pinned artifact integrity, and failed download\n'
