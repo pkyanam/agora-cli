@@ -27,12 +27,13 @@ agora --help
 agora products list
 ```
 
-The CLI supports products, payments, refunds and events. Provider and mode are selected by the server-side API key: sandbox operations are simulated, and Stripe test-mode checkout uses Stripe-hosted card entry and official test cards. The CLI never takes card details and cannot enable live charges. Amounts are integer USD cents, so `4900` means `$49.00`. Every write requires a stable `--idempotency-key`; reuse it only when retrying the same request. A refund response of `pending` means provider confirmation is still outstanding; `requires_approval` means no refund has executed yet.
+The CLI supports products, payments (including hosted-checkout reconciliation), refunds and events. Provider and mode are selected by the server-side API key: sandbox operations are simulated, and Stripe test-mode checkout uses Stripe-hosted card entry and official test cards. The CLI never takes card details and cannot enable live charges. Amounts are integer USD cents, so `4900` means `$49.00`. Create and refund writes require a stable `--idempotency-key`; reuse it only when retrying the same request. Payment reconciliation is safe to repeat and does not create another payment. A refund response of `pending` means provider confirmation is still outstanding; `requires_approval` means no refund has executed yet. After a network timeout or server error, inspect payment/refund state and never retry a write under a new idempotency key.
 
 ```bash
 agora products create --name 'Studio license' --amount 4900 --idempotency-key product-studio-v1
 agora payments create --product prod_… --customer 'Alex' --idempotency-key order-001
 agora payments get --id pay_…
+agora payments reconcile --id pay_…
 agora refunds create --payment pay_… --amount 4900 --reason 'Customer request' --idempotency-key refund-001
 agora events list --cursor 0
 ```
@@ -43,6 +44,8 @@ The command emits JSON to stdout and errors to stderr. It never retries a paymen
 
 ```bash
 bash tests/install.test.sh
+node --test tests/cli.test.mjs
+bun test tests/sdk.test.ts
 ```
 
 The CLI is dependency-free. The optional TypeScript client is in `sdk/agora.ts` and makes requests only with a caller-provided mode-bound API key.
