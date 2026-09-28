@@ -1,0 +1,16 @@
+#!/usr/bin/env node
+// Agora managed CLI (pkyanam/agora-cli)
+// No dependencies. No implicit retries. No credentials in command arguments.
+const args=process.argv.slice(2);
+const help=`Agora sandbox CLI\n\nSet AGORA_URL and AGORA_API_KEY in your environment.\n\n  node cli/agora.mjs products list\n  node cli/agora.mjs products create --name "Studio" --amount 4900 --idempotency-key product-1\n  node cli/agora.mjs payments list\n  node cli/agora.mjs payments get --id pay_...\n  node cli/agora.mjs payments create --product prod_... --customer "Alex" --idempotency-key order-1\n  node cli/agora.mjs refunds create --payment pay_... --amount 4900 --reason "Customer request" --idempotency-key refund-1\n  node cli/agora.mjs events list --cursor 0\n\nAll amounts are integer USD cents. Keys are sandbox-only.\nMutations require a stable --idempotency-key. Reuse it for retries.\nA refund can return requires_approval; it has NOT executed in that state.\nOutput is JSON; errors go to stderr with a nonzero exit status.\n`;
+if(!args.length||args.includes('--help')){console.log(help);process.exit(0)}
+try{
+ const [resource,verb,...rest]=args;const flags={};for(let i=0;i<rest.length;i+=2){if(!rest[i].startsWith('--')||!rest[i+1]||rest[i+1].startsWith('--'))throw new Error('Flags require values. Use --help.');flags[rest[i].slice(2)]=rest[i+1];}
+ const need=name=>{if(!flags[name])throw new Error(`Missing --${name}`);return flags[name]};
+ const amount=()=>{const n=Number(need('amount'));if(!Number.isSafeInteger(n)||n<=0)throw new Error('--amount must be positive integer cents');return n};
+ const key=process.env.AGORA_API_KEY;const base=process.env.AGORA_URL;if(!key||!base)throw new Error('Set AGORA_URL and AGORA_API_KEY.');const url=new URL(base);if(url.protocol!=='https:'&&!(url.protocol==='http:'&&(url.hostname==='localhost'||url.hostname==='127.0.0.1'||url.hostname.endsWith('.localhost'))))throw new Error('AGORA_URL must use HTTPS or local HTTP.');let method='GET',path=resource,body;
+ if(verb==='list'&&['products','payments','events'].includes(resource)){const cursor=Number(flags.cursor||0);if(!Number.isSafeInteger(cursor)||cursor<0)throw new Error('Invalid cursor');path+=`?cursor=${cursor}`;}
+ else if(verb==='get'&&resource==='payments')path+=`/${encodeURIComponent(need('id'))}`;
+ else if(verb==='create'){method='POST';if(resource==='payments')body={product_id:need('product'),customer:flags.customer};else if(resource==='products')body={name:need('name'),amount:amount(),description:flags.description||''};else if(resource==='refunds')body={payment_id:need('payment'),amount:amount(),reason:need('reason')};else throw new Error('Unknown resource. Use --help.');}else throw new Error('Unknown command. Use --help.');
+ const r=await fetch(`${url.origin}/api/v1/${path}`,{method,headers:{Authorization:`Bearer ${key}`,...(body?{'Content-Type':'application/json','Idempotency-Key':need('idempotency-key')}:{})},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(15000)});const result=await r.json();if(!r.ok){console.error(JSON.stringify(result,null,2));process.exitCode=1}else console.log(JSON.stringify(result,null,2));
+}catch(e){console.error(JSON.stringify({error:{code:'cli_error',message:e.message}},null,2));process.exitCode=1;}
