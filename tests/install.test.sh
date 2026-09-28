@@ -71,6 +71,42 @@ if env HOME="$TEST_HOME/tampered" TEST_INSTALL_SCRIPT="$ROOT/install.sh" TEST_CL
 fi
 assert_contains "$TEST_HOME/tampered.out" 'failed its SHA-256 check'
 
+# Raw GitHub fallback is checked against the same pin as the app-hosted file.
+FALLBACK_BIN="$TEST_HOME/raw fallback bin"
+mkdir -p "$FALLBACK_BIN"
+cat > "$FALLBACK_BIN/curl" <<'EOF'
+#!/usr/bin/env bash
+set -eu
+case "${*: -1}" in
+  */agora-payments.vercel.app/agora-cli.mjs) exit 1 ;;
+  */cli/agora.mjs) printf '%s\n' 'tampered raw fallback' ;;
+  *) exit 1 ;;
+esac
+EOF
+chmod 755 "$FALLBACK_BIN/curl"
+if env HOME="$TEST_HOME/raw-fallback-tampered" TEST_INSTALL_SCRIPT="$ROOT/install.sh" PATH="$FALLBACK_BIN:$REAL_PATH" bash -c 'set -o pipefail; cat "$TEST_INSTALL_SCRIPT" | bash -s' >"$TEST_HOME/raw-fallback-tampered.out" 2>&1; then
+  fail 'Installer accepted a raw GitHub fallback artifact with the wrong checksum.'
+fi
+assert_contains "$TEST_HOME/raw-fallback-tampered.out" 'failed its SHA-256 check'
+
+# The authenticated GitHub CLI fallback also enforces the same checksum.
+GH_FALLBACK_BIN="$TEST_HOME/gh fallback bin"
+mkdir -p "$GH_FALLBACK_BIN"
+cat > "$GH_FALLBACK_BIN/curl" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+cat > "$GH_FALLBACK_BIN/gh" <<'EOF'
+#!/usr/bin/env bash
+set -eu
+printf '%s\n' 'tampered gh fallback'
+EOF
+chmod 755 "$GH_FALLBACK_BIN/curl" "$GH_FALLBACK_BIN/gh"
+if env HOME="$TEST_HOME/gh-fallback-tampered" TEST_INSTALL_SCRIPT="$ROOT/install.sh" PATH="$GH_FALLBACK_BIN:$REAL_PATH" bash -c 'set -o pipefail; cat "$TEST_INSTALL_SCRIPT" | bash -s' >"$TEST_HOME/gh-fallback-tampered.out" 2>&1; then
+  fail 'Installer accepted a GitHub CLI fallback artifact with the wrong checksum.'
+fi
+assert_contains "$TEST_HOME/gh-fallback-tampered.out" 'failed its SHA-256 check'
+
 # Repeat updates are allowed only for our marked CLI and are replaced atomically.
 UPDATE_REPO="$TEST_HOME/repo update"
 mkdir -p "$UPDATE_REPO/cli"

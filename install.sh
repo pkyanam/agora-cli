@@ -45,34 +45,36 @@ if [[ -n "$SCRIPT_DIR" && -f "$SCRIPT_DIR/cli/agora.mjs" ]]; then
 else
   REF="${AGORA_REF:-main}"
   FETCHED=0
-  PUBLIC_ARTIFACT=0
+  NEED_CHECKSUM=0
   if command -v curl >/dev/null 2>&1 && curl --fail --silent --show-error --location "$APP_BASE/agora-cli.mjs" > "$SOURCE" 2>/dev/null; then
     FETCHED=1
-    PUBLIC_ARTIFACT=1
+    NEED_CHECKSUM=1
   elif command -v curl >/dev/null 2>&1 && curl --fail --silent --show-error --location "$RAW_BASE/$REF/cli/agora.mjs" > "$SOURCE" 2>/dev/null; then
     FETCHED=1
+    NEED_CHECKSUM=1
   fi
   if (( FETCHED == 0 )) && command -v gh >/dev/null 2>&1; then
     : > "$SOURCE"
     if gh api --header 'Accept: application/vnd.github.raw' "repos/$REPO/contents/cli/agora.mjs?ref=$REF" > "$SOURCE"; then
       FETCHED=1
+      NEED_CHECKSUM=1
     fi
   fi
   if (( FETCHED == 0 )); then
     printf '%s\n' 'Could not download Agora CLI. Confirm `gh auth status` can access pkyanam/agora-cli, or retry when the public installer is available.' >&2
     exit 1
   fi
-  if (( PUBLIC_ARTIFACT == 1 )); then
+  if (( NEED_CHECKSUM == 1 )); then
     if command -v shasum >/dev/null 2>&1; then
       ACTUAL_SHA256="$(shasum -a 256 "$SOURCE" | awk '{print $1}')"
     elif command -v sha256sum >/dev/null 2>&1; then
       ACTUAL_SHA256="$(sha256sum "$SOURCE" | awk '{print $1}')"
     else
-      printf '%s\n' 'Cannot verify the public Agora CLI artifact: install shasum or sha256sum, then retry.' >&2
+      printf '%s\n' 'Cannot verify the downloaded Agora CLI: install shasum or sha256sum, then retry.' >&2
       exit 1
     fi
     if [[ "$ACTUAL_SHA256" != "$CLI_SHA256" ]]; then
-      printf '%s\n' 'The public Agora CLI artifact failed its SHA-256 check. Nothing was installed.' >&2
+      printf '%s\n' 'The downloaded Agora CLI failed its SHA-256 check. Nothing was installed.' >&2
       exit 1
     fi
   fi
