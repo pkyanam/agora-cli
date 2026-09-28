@@ -1,3 +1,5 @@
+import { createHmac, timingSafeEqual } from "node:crypto"
+
 /** Agora's first-party, dependency-free server-side client. */
 export type Provider = "sandbox" | "stripe"
 export type ProviderMode = "sandbox" | "test" | "live"
@@ -50,6 +52,27 @@ export type PaymentReconciliation = {
 
 export type Page<T> = { data: T[]; next_cursor: number | null }
 export type MutationOptions = { idempotencyKey: string }
+
+/**
+ * Verify Agora's outgoing webhook signature over the exact UTF-8 request body.
+ * Parse JSON only after this returns true. Timestamps older/newer than 5 minutes
+ * are rejected to limit replay; the server may retry the same event later with
+ * a fresh timestamp and signature.
+ */
+export function verifyOutgoingWebhook(
+  secret: string,
+  timestamp: string,
+  rawBody: string,
+  signature: string,
+  nowSeconds = Math.floor(Date.now() / 1000),
+): boolean {
+  if (!secret || !/^\d+$/.test(timestamp) || !Number.isSafeInteger(Number(timestamp))) return false
+  if (!Number.isSafeInteger(nowSeconds) || Math.abs(nowSeconds - Number(timestamp)) > 300) return false
+  if (!/^v1=[a-f0-9]{64}$/.test(signature)) return false
+  const expected = createHmac("sha256", secret).update(`${timestamp}.${rawBody}`, "utf8").digest()
+  const received = Buffer.from(signature.slice(3), "hex")
+  return expected.length === received.length && timingSafeEqual(expected, received)
+}
 
 type ApiErrorBody = {
   error?: { message?: string; code?: string; request_id?: string }

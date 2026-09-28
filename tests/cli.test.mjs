@@ -1,11 +1,50 @@
 import assert from "node:assert/strict"
-import { spawn } from "node:child_process"
+import { spawn, spawnSync } from "node:child_process"
+import { createHmac } from "node:crypto"
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { createServer } from "node:http"
 import { once } from "node:events"
+import os from "node:os"
+import path from "node:path"
 import { fileURLToPath } from "node:url"
 import test from "node:test"
 
 const cliPath = fileURLToPath(new URL("../cli/agora.mjs", import.meta.url))
+
+test("webhook verifier returns rich event and delivery metadata without exposing secret", async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), "agora-webhook-cli-"))
+  const secret = "whsec_cli_test_fixture"
+  const timestamp = String(Math.floor(Date.now() / 1000))
+  const event = { id: "evt_cli_fixture", type: "payment.succeeded", api_version: "2026-09-28", data: { object: { id: "pay_cli_fixture" } } }
+  const rawBody = JSON.stringify(event)
+  const signature = `v1=${createHmac("sha256", secret).update(`${timestamp}.${rawBody}`, "utf8").digest("hex")}`
+  const secretPath = path.join(temp, "secret")
+  const bodyPath = path.join(temp, "body.json")
+  try {
+    await writeFile(secretPath, `${secret}\n`, { mode: 0o600 })
+    await chmod(secretPath, 0o600)
+    await writeFile(bodyPath, rawBody)
+    const args = [cliPath, "webhooks", "verify", "--secret-file", secretPath, "--body-file", bodyPath,
+      "--timestamp", timestamp, "--signature", signature, "--event-id", event.id,
+      "--delivery-id", "whd_cli_fixture", "--event-type", event.type]
+    const valid = spawnSync(process.execPath, args, { encoding: "utf8" })
+    assert.equal(valid.status, 0, valid.stderr)
+    const result = JSON.parse(valid.stdout)
+    assert.equal(result.verified, true)
+    assert.equal(result.event_id, event.id)
+    assert.equal(result.delivery_id, "whd_cli_fixture")
+    assert.equal(result.event.data.object.id, "pay_cli_fixture")
+    assert.ok(!valid.stdout.includes(secret))
+
+    await writeFile(bodyPath, `${rawBody} `)
+    const tampered = spawnSync(process.execPath, args, { encoding: "utf8" })
+    assert.notEqual(tampered.status, 0)
+    assert.match(tampered.stderr, /exact request body/)
+    assert.ok(!tampered.stderr.includes(secret))
+  } finally {
+    await rm(temp, { recursive: true, force: true })
+  }
+})
 
 async function withServer(handler, run) {
   const server = createServer(handler)

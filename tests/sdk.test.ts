@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { Agora, AgoraError } from "../sdk/agora"
+import { createHmac } from "node:crypto"
+import { Agora, AgoraError, verifyOutgoingWebhook } from "../sdk/agora"
 
 const originalFetch = globalThis.fetch
 afterEach(() => {
@@ -7,6 +8,18 @@ afterEach(() => {
 })
 
 describe("Agora TypeScript client", () => {
+  test("verifies signatures against exact raw bytes and rejects stale or malformed headers", () => {
+    const secret = "whsec_test_fixture"
+    const timestamp = "1790610000"
+    const rawBody = '{"id":"evt_fixture","type":"payment.succeeded"}'
+    const signature = `v1=${createHmac("sha256", secret).update(`${timestamp}.${rawBody}`, "utf8").digest("hex")}`
+    const now = Number(timestamp) + 300
+    expect(verifyOutgoingWebhook(secret, timestamp, rawBody, signature, now)).toBe(true)
+    expect(verifyOutgoingWebhook(secret, timestamp, `${rawBody} `, signature, now)).toBe(false)
+    expect(verifyOutgoingWebhook(secret, timestamp, rawBody, signature, now + 1)).toBe(false)
+    expect(verifyOutgoingWebhook(secret, timestamp, rawBody, "v1=not-hex", now)).toBe(false)
+  })
+
   test("requires idempotency before any create request", async () => {
     let called = false
     globalThis.fetch = (async () => {

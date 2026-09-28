@@ -4,7 +4,7 @@ set -euo pipefail
 REPO="pkyanam/agora-cli"
 RAW_BASE="https://raw.githubusercontent.com/$REPO"
 APP_BASE="${AGORA_SITE_BASE:-https://agora-payments.vercel.app}"
-CLI_SHA256="3813c1e6de4571713d516438b2f583f695006e56b80f817074776afafe590180"
+CLI_SHA256="9d02f2635e801a6344e810bf18468df52e56cd214b6dd570991892082b45796d"
 MIN_NODE_MAJOR=20
 MIN_NODE_MINOR=9
 DEST_DIR="${AGORA_INSTALL_DIR:-${HOME:?Set HOME before installing}/.local/bin}"
