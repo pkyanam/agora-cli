@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="640" viewBox="0 0 1200 640" role="img" aria-labelledby="title desc">
+  <title id="title">Agora overview screenshot placeholder</title>
+  <desc id="desc">Placeholder for a screenshot of the Agora overview page.</desc>
+  <rect width="1200" height="640" fill="#f7f7f7"/>
+  <rect x="2" y="2" width="1196" height="636" rx="16" fill="none" stroke="#d8d8d8" stroke-width="4" stroke-dasharray="12 10"/>
+  <text x="600" y="300" text-anchor="middle" fill="#444" font-family="system-ui, sans-serif" font-size="30" font-weight="600">Agora overview</text>
+  <text x="600" y="348" text-anchor="middle" fill="#777" font-family="system-ui, sans-serif" font-size="20">Screenshot coming soon</text>
+</svg>

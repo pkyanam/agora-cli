@@ -42,21 +42,19 @@ if [[ -n "$SCRIPT_DIR" && -f "$SCRIPT_DIR/cli/agora.mjs" ]]; then
   cp "$SCRIPT_DIR/cli/agora.mjs" "$SOURCE"
 else
   REF="${AGORA_REF:-main}"
-  if ! command -v gh >/dev/null 2>&1; then
-    printf '%s\n' 'Install GitHub CLI (`gh`), authenticate with `gh auth login`, and retry.' >&2
-    exit 1
-  fi
-  if ! gh auth status >/dev/null 2>&1; then
-    printf '%s\n' 'Agora CLI is hosted in a private GitHub repository during prerelease. Run `gh auth login` with access to pkyanam/agora-cli, then retry.' >&2
-    exit 1
-  fi
-  REPOSITORY="$TMP_DIR/repository"
-  if ! gh repo clone "$REPO" "$REPOSITORY" >/dev/null 2>&1; then
-    printf 'Could not access %s on GitHub. Confirm your account has repository access and retry.\n' "$REPO" >&2
-    exit 1
-  fi
-  if ! git -C "$REPOSITORY" show "$REF:cli/agora.mjs" > "$SOURCE"; then
-    printf 'Could not read the Agora CLI at Git ref %s.\n' "$REF" >&2
+  URL="https://raw.githubusercontent.com/${REPO}/${REF}/cli/agora.mjs"
+  if command -v curl >/dev/null 2>&1; then
+    if ! curl -fsSL "$URL" -o "$SOURCE"; then
+      printf 'Could not download the Agora CLI from GitHub (%s).\n' "$REF" >&2
+      exit 1
+    fi
+  elif command -v wget >/dev/null 2>&1; then
+    if ! wget -q "$URL" -O "$SOURCE"; then
+      printf 'Could not download the Agora CLI from GitHub (%s).\n' "$REF" >&2
+      exit 1
+    fi
+  else
+    printf '%s\n' 'Install curl or wget, then run this installer again.' >&2
     exit 1
   fi
   if command -v shasum >/dev/null 2>&1; then

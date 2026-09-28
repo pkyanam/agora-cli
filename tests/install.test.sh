@@ -39,35 +39,28 @@ if HOME="$TEST_HOME/other" AGORA_INSTALL_DIR="$UNRELATED_DIR" bash "$ROOT/instal
 fi
 assert_contains "$UNRELATED_DIR/agora" 'printf unrelated'
 
-# A piped install clones the GitHub source and accepts only the pinned client.
-GH_BIN="$TEST_HOME/gh bin"
-GH_REPO="$TEST_HOME/github repo"
-mkdir -p "$GH_BIN" "$GH_REPO/cli"
-cp "$ROOT/cli/agora.mjs" "$GH_REPO/cli/agora.mjs"
-git -C "$GH_REPO" init -q -b main
-git -C "$GH_REPO" -c user.name=Test -c user.email=test@example.invalid add cli/agora.mjs
-git -C "$GH_REPO" -c user.name=Test -c user.email=test@example.invalid commit -qm fixture
-cat > "$GH_BIN/gh" <<'EOF'
+# A piped install downloads the pinned public GitHub file without GitHub CLI.
+CURL_BIN="$TEST_HOME/curl bin"
+mkdir -p "$CURL_BIN"
+cat > "$CURL_BIN/curl" <<'EOF'
 #!/usr/bin/env bash
 set -eu
-case "$1" in
-  auth) [[ "$2" == status ]] ;;
-  repo) [[ "$2" == clone ]] && git clone -q "$TEST_GH_REPO" "$4" ;;
-  *) exit 1 ;;
-esac
+while (($#)); do
+  if [[ "$1" == -o ]]; then OUTPUT="$2"; shift 2; else URL="$1"; shift; fi
+done
+[[ "$URL" == https://raw.githubusercontent.com/pkyanam/agora-cli/*/cli/agora.mjs ]]
+cp "$TEST_CLI_SOURCE" "$OUTPUT"
 EOF
-chmod 755 "$GH_BIN/gh"
-if env HOME="$TEST_HOME/github" SHELL=/bin/fish AGORA_INSTALL_DIR="$TEST_HOME/github/bin" TEST_GH_REPO="$GH_REPO" TEST_INSTALL_SCRIPT="$ROOT/install.sh" PATH="$GH_BIN:$REAL_PATH" bash -c 'set -o pipefail; cat "$TEST_INSTALL_SCRIPT" | bash -s' >"$TEST_HOME/github.out" 2>&1; then
+chmod 755 "$CURL_BIN/curl"
+if env HOME="$TEST_HOME/github" SHELL=/bin/fish AGORA_INSTALL_DIR="$TEST_HOME/github/bin" TEST_CLI_SOURCE="$ROOT/cli/agora.mjs" TEST_INSTALL_SCRIPT="$ROOT/install.sh" PATH="$CURL_BIN:$REAL_PATH" bash -c 'set -o pipefail; cat "$TEST_INSTALL_SCRIPT" | bash -s' >"$TEST_HOME/github.out" 2>&1; then
   assert_contains "$TEST_HOME/github/bin/agora" '// Agora managed CLI (pkyanam/agora-cli)'
 else
   cat "$TEST_HOME/github.out" >&2
-  fail 'Installer did not accept the pinned client from its authenticated GitHub checkout.'
+  fail 'Piped installer did not download the pinned public CLI.'
 fi
 
-printf '%s\n' 'tampered artifact' > "$GH_REPO/cli/agora.mjs"
-git -C "$GH_REPO" -c user.name=Test -c user.email=test@example.invalid add cli/agora.mjs
-git -C "$GH_REPO" -c user.name=Test -c user.email=test@example.invalid commit -qm tampered
-if env HOME="$TEST_HOME/tampered" TEST_GH_REPO="$GH_REPO" TEST_INSTALL_SCRIPT="$ROOT/install.sh" PATH="$GH_BIN:$REAL_PATH" bash -c 'set -o pipefail; cat "$TEST_INSTALL_SCRIPT" | bash -s' >"$TEST_HOME/tampered.out" 2>&1; then
+printf '%s\n' 'tampered artifact' > "$TEST_HOME/tampered.mjs"
+if env HOME="$TEST_HOME/tampered" TEST_CLI_SOURCE="$TEST_HOME/tampered.mjs" TEST_INSTALL_SCRIPT="$ROOT/install.sh" PATH="$CURL_BIN:$REAL_PATH" bash -c 'set -o pipefail; cat "$TEST_INSTALL_SCRIPT" | bash -s' >"$TEST_HOME/tampered.out" 2>&1; then
   fail 'Installer accepted a GitHub client with the wrong checksum.'
 fi
 assert_contains "$TEST_HOME/tampered.out" 'failed its SHA-256 check'
@@ -111,19 +104,17 @@ if env HOME="$TEST_HOME/no-node" PATH=/usr/bin:/bin bash "$ROOT/install.sh" >"$T
 fi
 assert_contains "$TEST_HOME/no-node.out" 'Node.js 20.9 or newer'
 
-# A remote install needs authenticated gh after the runtime check passes.
+# A remote install works without GitHub CLI after the runtime check passes.
 NODE_ONLY_BIN="$TEST_HOME/node only bin"
 mkdir -p "$NODE_ONLY_BIN"
 ln -s "$(command -v node)" "$NODE_ONLY_BIN/node"
-cat > "$NODE_ONLY_BIN/curl" <<'EOF'
-#!/usr/bin/env bash
-exit 1
-EOF
-chmod 755 "$NODE_ONLY_BIN/curl"
-if env HOME="$TEST_HOME/no-gh" SHELL=/bin/zsh TEST_INSTALL_SCRIPT="$ROOT/install.sh" PATH="$NODE_ONLY_BIN:/usr/bin:/bin" bash -c 'set -o pipefail; cat "$TEST_INSTALL_SCRIPT" | bash -s' >"$TEST_HOME/no-gh.out" 2>&1; then
-  fail 'Installer unexpectedly succeeded without GitHub CLI.'
+cp "$CURL_BIN/curl" "$NODE_ONLY_BIN/curl"
+if env HOME="$TEST_HOME/no-gh" SHELL=/bin/zsh AGORA_INSTALL_DIR="$TEST_HOME/no-gh/bin" TEST_CLI_SOURCE="$ROOT/cli/agora.mjs" TEST_INSTALL_SCRIPT="$ROOT/install.sh" PATH="$NODE_ONLY_BIN:/usr/bin:/bin" bash -c 'set -o pipefail; cat "$TEST_INSTALL_SCRIPT" | bash -s' >"$TEST_HOME/no-gh.out" 2>&1; then
+  assert_contains "$TEST_HOME/no-gh/bin/agora" '// Agora managed CLI (pkyanam/agora-cli)'
+else
+  cat "$TEST_HOME/no-gh.out" >&2
+  fail 'Installer unexpectedly required GitHub CLI.'
 fi
-assert_contains "$TEST_HOME/no-gh.out" 'Install GitHub CLI'
 
 # Bash config is backed up once and receives one managed block.
 mkdir -p "$TEST_HOME/bash home"
@@ -133,4 +124,4 @@ assert_contains "$TEST_HOME/bash home/.bash_profile" 'EXISTING_SETTING=kept'
 assert_contains "$TEST_HOME/bash home/.bash_profile" '# >>> Agora CLI PATH >>>'
 [[ "$(find "$TEST_HOME/bash home" -maxdepth 1 -name '.bash_profile.agora-backup.*' | wc -l | tr -d ' ')" == 1 ]] || fail 'Existing bash profile was not backed up.'
 
-printf 'PASS: install, update, path quoting, shell backup, collision safety, pinned GitHub client integrity, and failed download\n'
+printf 'PASS: install, update, path quoting, shell backup, collision safety, public download integrity, and failed download\n'
