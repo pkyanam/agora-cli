@@ -51,6 +51,7 @@ describe("Agora TypeScript client", () => {
         provider: "stripe",
         provider_mode: "test",
         checkout_url: "/checkout/start#opaque",
+        provider_checkout_url: "https://checkout.stripe.com/c/pay_provider_only",
         created_at: "2026-09-28T00:00:00Z",
       }, { status: 201 })
     }) as typeof fetch
@@ -65,6 +66,27 @@ describe("Agora TypeScript client", () => {
     expect((request?.headers as Record<string, string>)["Idempotency-Key"]).toBe("order-fixture-1")
     expect(payment.provider_mode).toBe("test")
     expect(payment.checkout_url).toBe("https://agora.example/checkout/start#opaque")
+    expect("provider_checkout_url" in payment).toBe(false)
+  })
+
+  test("payment get and list preserve Agora checkout URLs and omit processor URLs", async () => {
+    globalThis.fetch = (async (input) => {
+      const url = String(input)
+      const row = {
+        id: "pay_fixture",
+        checkout_url: "https://agora.example/checkout/start#long-opaque-fragment",
+        provider_checkout_url: "https://checkout.stripe.com/c/pay_provider_only",
+      }
+      return Response.json(url.endsWith("?cursor=0") ? { data: [row], next_cursor: null } : row)
+    }) as typeof fetch
+
+    const api = new Agora({ apiKey: "fixture", baseUrl: "https://agora.example" })
+    const payment = await api.payments.get("pay_fixture")
+    const page = await api.payments.list()
+    expect(payment.checkout_url).toBe("https://agora.example/checkout/start#long-opaque-fragment")
+    expect("provider_checkout_url" in payment).toBe(false)
+    expect(page.data[0].checkout_url).toBe("https://agora.example/checkout/start#long-opaque-fragment")
+    expect("provider_checkout_url" in page.data[0]).toBe(false)
   })
 
   test("reconciles through the documented endpoint without pretending it needs a write key", async () => {

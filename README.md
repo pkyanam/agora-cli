@@ -26,3 +26,14 @@ agora products list
 ```
 
 Run `agora --help` to see all commands. [Open an issue](https://github.com/pkyanam/agora-cli/issues) if you need help.
+
+## Share a payment
+
+`agora payments create` prints the server response as JSON. Share the complete
+`checkout_url` field with the buyer exactly as returned. Do not construct a URL
+from the payment `id`, shorten the URL, or use a processor checkout URL. The
+Agora URL is the payer-facing link and can contain a capability in its fragment.
+The CLI preserves the full URL and omits processor-only checkout URLs.
+
+Agent instructions for Agora integrations: [`skills/agora/SKILL.md`](skills/agora/SKILL.md).
+To install it for a supported coding agent, run `npx skills add https://github.com/pkyanam/agora-cli --skill agora` (see the [Skills CLI](https://www.skills.sh/docs/cli)).

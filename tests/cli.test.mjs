@@ -94,6 +94,37 @@ test("payments reconcile calls the documented POST endpoint without a mutation k
   assert.deepEqual(JSON.parse(result.stdout), { id: "pay_fixture", status: "pending", reconciled: false })
 })
 
+test("payment create, replay, get, and list preserve Agora checkout URLs and suppress provider URLs", async () => {
+  const canonical = "https://agora.example/checkout/start#opaque-capability-that-must-not-be-truncated"
+  const provider = "https://checkout.stripe.com/c/pay_provider_only"
+  const result = await withServer((req, res) => {
+    const body = req.url === "/api/v1/payments"
+      ? { id: "pay_fixture", checkout_url: canonical, provider_checkout_url: provider }
+      : req.url === "/api/v1/payments?cursor=0"
+        ? { data: [{ id: "pay_fixture", checkout_url: "/checkout/start#opaque-capability-that-must-not-be-truncated", provider_checkout_url: provider }], next_cursor: null }
+        : { id: "pay_fixture", checkout_url: "/checkout/start#opaque-capability-that-must-not-be-truncated", provider_checkout_url: provider }
+    res.writeHead(200, { "content-type": "application/json" })
+    res.end(JSON.stringify(body))
+  }, async (baseUrl) => {
+    const create = await runCli(["payments", "create", "--product", "prod_fixture", "--idempotency-key", "stable-order-1"], baseUrl)
+    const replay = await runCli(["payments", "create", "--product", "prod_fixture", "--idempotency-key", "stable-order-1"], baseUrl)
+    const get = await runCli(["payments", "get", "--id", "pay_fixture"], baseUrl)
+    const list = await runCli(["payments", "list"], baseUrl)
+    return { create, replay, get, list, baseUrl }
+  })
+
+  for (const output of [result.create, result.replay, result.get, result.list]) {
+    assert.equal(output.status, 0, output.stderr)
+    assert.doesNotMatch(output.stdout, /checkout\.stripe\.com|provider_checkout_url/)
+  }
+  assert.deepEqual(JSON.parse(result.create.stdout), JSON.parse(result.replay.stdout))
+  assert.equal(JSON.parse(result.create.stdout).checkout_url, canonical)
+  const relativeCanonical = new URL("/checkout/start#opaque-capability-that-must-not-be-truncated", result.baseUrl).href
+  assert.equal(JSON.parse(result.get.stdout).checkout_url, relativeCanonical)
+  assert.equal(JSON.parse(result.list.stdout).data[0].checkout_url, relativeCanonical)
+  for (const output of [result.create, result.replay, result.get, result.list]) assert.doesNotMatch(output.stdout, /\/checkout\/pay_fixture/)
+})
+
 test("a create command requires an idempotency key before making a request", async () => {
   let requestCount = 0
   const result = await withServer((_req, res) => {

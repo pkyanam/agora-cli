@@ -33,6 +33,8 @@ Environment variables AGORA_URL and AGORA_API_KEY override that saved profile.
   agora events list --cursor 0
 
 All amounts are integer USD cents. The connected merchant and provider mode are selected by the server.
+For a created payment, use and share the returned Agora checkout_url exactly as returned. Never
+construct a checkout URL from a payment id or share a processor URL; the checkout URL may be long.
 Mutations require a stable --idempotency-key. Reuse it for retries.
 A payment reconciliation is safe to repeat and does not require an idempotency key.
 A refund can return requires_approval; it has NOT executed in that state. A pending refund still awaits provider confirmation.
@@ -143,6 +145,14 @@ function validateOrigin(value) {
   if (url.protocol !== "https:" && !localHttp) throw new Error("Agora URL must use HTTPS or local HTTP.")
   if (url.username || url.password || url.pathname !== "/" || url.search || url.hash) throw new Error("Agora URL must be an origin without credentials, path, query, or fragment.")
   return url.origin
+}
+
+function withoutProviderCheckoutUrls(value) {
+  if (Array.isArray(value)) return value.map(withoutProviderCheckoutUrls)
+  if (!value || typeof value !== "object") return value
+  return Object.fromEntries(Object.entries(value)
+    .filter(([key]) => key !== "provider_checkout_url")
+    .map(([key, item]) => [key, withoutProviderCheckoutUrls(item)]))
 }
 
 async function loadConfig() {
@@ -344,9 +354,16 @@ try {
     console.error(JSON.stringify(result, null, 2))
     process.exitCode = 1
   } else {
-    if (result && typeof result === "object" && typeof result.checkout_url === "string" && result.checkout_url.startsWith("/")) {
-      result.checkout_url = new URL(result.checkout_url, `${origin}/`).toString()
+    result = withoutProviderCheckoutUrls(result)
+    const normalizeCheckoutUrls = (value) => {
+      if (Array.isArray(value)) return value.forEach(normalizeCheckoutUrls)
+      if (!value || typeof value !== "object") return
+      for (const [key, item] of Object.entries(value)) {
+        if (key === "checkout_url" && typeof item === "string" && item.startsWith("/")) value[key] = new URL(item, `${origin}/`).toString()
+        else normalizeCheckoutUrls(item)
+      }
     }
+    normalizeCheckoutUrls(result)
     console.log(JSON.stringify(result, null, 2))
   }
 } catch (error) {

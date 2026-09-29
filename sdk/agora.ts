@@ -24,6 +24,8 @@ export type Payment = {
   status: "pending" | "succeeded" | "failed"
   provider?: Provider
   provider_mode?: "test" | "live" | null
+  /** Agora's payer-facing hosted checkout URL. Use this exact value; never build it from the payment ID. */
+  checkout_url?: string
   created_at: string
 }
 
@@ -192,7 +194,7 @@ export class Agora {
       )
     }
 
-    return result as T
+    return withoutProviderCheckoutUrls(result) as T
   }
 
   products = {
@@ -239,6 +241,13 @@ export class Agora {
       created_at: string
     }>>("GET", `events?cursor=${validCursor(cursor)}`),
   }
+}
+
+/** Strip processor-only checkout links before exposing API responses to callers. */
+function withoutProviderCheckoutUrls(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutProviderCheckoutUrls)
+  if (!value || typeof value !== "object") return value
+  return Object.fromEntries(Object.entries(value).filter(([key]) => key !== "provider_checkout_url").map(([key, item]) => [key, withoutProviderCheckoutUrls(item)]))
 }
 
 function validCursor(cursor: number) {
