@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { spawn, spawnSync } from "node:child_process"
 import { createHmac } from "node:crypto"
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { createServer } from "node:http"
 import { once } from "node:events"
 import os from "node:os"
@@ -10,6 +10,25 @@ import { fileURLToPath } from "node:url"
 import test from "node:test"
 
 const cliPath = fileURLToPath(new URL("../cli/agora.mjs", import.meta.url))
+
+test("agora --skill prints the exact bundled skill without auth, config, or network", async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), "agora-skill-cli-"))
+  const configDir = path.join(temp, ".config")
+  await mkdir(path.join(configDir, "agora"), { recursive: true })
+  await writeFile(path.join(configDir, "agora", "config.json"), "not valid json")
+  try {
+    const expected = await readFile(new URL("../skills/agora/SKILL.md", import.meta.url), "utf8")
+    const result = spawnSync(process.execPath, [cliPath, "--skill"], {
+      encoding: "utf8",
+      env: { HOME: temp, XDG_CONFIG_HOME: configDir, PATH: process.env.PATH },
+    })
+    assert.equal(result.status, 0, result.stderr)
+    assert.equal(result.stderr, "")
+    assert.equal(result.stdout, expected)
+  } finally {
+    await rm(temp, { recursive: true, force: true })
+  }
+})
 
 test("webhook verifier returns rich event and delivery metadata without exposing secret", async () => {
   const temp = await mkdtemp(path.join(os.tmpdir(), "agora-webhook-cli-"))

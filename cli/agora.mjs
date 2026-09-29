@@ -8,11 +8,18 @@ import os from "node:os"
 import path from "node:path"
 
 const args = process.argv.slice(2)
+const bundledSkill = "---\nname: agora-payments\ndescription: Use Agora's CLI, API, or SDK to create and inspect merchant payments and share the correct hosted checkout link.\n---\n\n# Agora payments\n\nUse the installed `agora` CLI and its JSON output for Agora payment operations. Keep API keys and webhook secrets out of prompts, logs, and replies. Do not claim a payment succeeded until Agora reports a terminal succeeded state.\n\n## Checkout links\n\n- For a created payment, use the complete `checkout_url` returned by Agora exactly as provided. Preserve the entire URL, including its fragment. Give that URL to the buyer verbatim.\n- Never construct a checkout path from a `payment.id`, shorten or truncate a checkout URL, or substitute a Stripe/provider URL. Payment IDs identify records; they are not checkout links.\n- If the response has no `checkout_url`, or the returned URL is unavailable or rejected, say so and stop. Do not guess a replacement. A payment get/list response may not include a share link.\n- If a create request's outcome is unknown, inspect the payment state and retry only with the same idempotency key. Do not create another payment to recover the URL.\n\n## Mode and financial effects\n\nCheck the merchant's configured provider mode before creating a payment. Clearly identify test mode versus live mode. Do not initiate a live-mode payment unless the user explicitly requested a live transaction; completing a live checkout can charge a customer. A pending record or checkout session is not proof of payment. Use Agora's reported status and verified provider events as the source of truth.\n\nUse `agora --help` for available commands. Payment creation requires a unique, stable `--idempotency-key`; reuse that key only when retrying the same order.\n"
+if (args.length === 1 && args[0] === "--skill") {
+  process.stdout.write(bundledSkill)
+  process.exit(0)
+}
+
 const help = `Agora payments CLI
 
 Link this CLI to an Agora deployment with: agora auth login --url https://agora.example
 The key is entered in a hidden prompt and stored in your private local config.
 Environment variables AGORA_URL and AGORA_API_KEY override that saved profile.
+Print the bundled agent instructions with: agora --skill
 
   agora auth login --url https://agora.example
   agora auth status

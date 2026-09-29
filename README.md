@@ -37,3 +37,4 @@ The CLI preserves the full URL and omits processor-only checkout URLs.
 
 Agent instructions for Agora integrations: [`skills/agora/SKILL.md`](skills/agora/SKILL.md).
 To install it for a supported coding agent, run `npx skills add https://github.com/pkyanam/agora-cli --skill agora` (see the [Skills CLI](https://www.skills.sh/docs/cli)).
+After installing the Agora CLI, `agora --skill` prints the same instructions to standard output without reading credentials or configuration.
