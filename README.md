@@ -77,10 +77,10 @@ After installing the Agora CLI, `agora --skill` prints the same instructions to 
 
 ## TypeScript SDK
 
-The dependency-free TypeScript client exposes the same scoped sales workflow. Mutations require an explicit stable idempotency key; the SDK does not retry writes automatically.
+The dependency-free TypeScript client in [`sdk/agora.ts`](sdk/agora.ts) exposes the same scoped sales workflow. Copy that file into your app; this repository does not publish it as an npm package. Mutations require an explicit stable idempotency key; the SDK does not retry writes automatically.
 
 ```ts
-import { Agora } from "agora-cli/sdk"
+import { Agora } from "./lib/agora.ts" // copy sdk/agora.ts here
 
 const agora = new Agora({ url: process.env.AGORA_URL!, apiKey: process.env.AGORA_API_KEY! })
 const account = await agora.account.status()
