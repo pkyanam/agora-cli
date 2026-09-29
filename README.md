@@ -7,7 +7,7 @@
   </p>
 </div>
 
-![Agora overview page screenshot placeholder](assets/overview-placeholder.svg)
+![Agora Community payments dashboard](assets/agora-overview.png)
 
 ## Install
 
