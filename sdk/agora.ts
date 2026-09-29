@@ -19,6 +19,7 @@ export type Customer = { id: string; name: string; email: string | null; created
 export type QuoteItem = { id?: string; quote_id?: string; product_id: string; product_name: string; catalog_version: number; quantity: number; unit_amount: number; line_total: number }
 export type Quote = {
   id: string
+  version?: number
   customer_id: string
   customer_name: string
   customer_email: string | null
@@ -195,7 +196,7 @@ export class Agora {
   }
 
   private async request<T>(
-    method: "GET" | "POST" | "PATCH",
+    method: "GET" | "POST" | "PATCH" | "PUT",
     path: string,
     body?: unknown,
     options?: MutationOptions,
@@ -290,6 +291,11 @@ export class Agora {
       data: { customer: { name: string; email?: string }; items: Array<{ product_id: string; quantity: number }>; discount_amount?: number; expires_at?: string },
       options: MutationOptions,
     ) => this.request<Quote>("POST", "quotes", data, options),
+    update: (
+      id: string,
+      data: { expected_version: number; customer: { name: string; email?: string }; items: Array<{ product_id: string; quantity: number }>; discount_amount?: number; expires_at?: string },
+      options: MutationOptions,
+    ) => this.request<Quote>("PUT", `quotes/${encodeURIComponent(id)}`, data, options),
     accept: (id: string, options: MutationOptions) => this.request<AcceptedQuote>(
       "POST", `quotes/${encodeURIComponent(id)}/accept`, {}, options,
     ),

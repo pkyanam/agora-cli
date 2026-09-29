@@ -39,7 +39,7 @@ agora quotes create --customer "Ada Lovelace" --email ada@example.com \
   --idempotency-key quote-ada-1
 ```
 
-Quotes snapshot product names and prices and return a `quote_url`; share that exact complete URL with the customer. They expire after seven days by default; an explicit `--expires-at` may be no more than 30 days ahead. The hosted quote page lets the customer review and accept the quote. `agora quotes accept` is a separate authenticated merchant API action that creates an order and payment; it is not evidence that the customer accepted:
+Quotes snapshot product names and prices and return a `quote_url`; share that exact complete URL with the customer. They expire after seven days by default; an explicit `--expires-at` may be no more than 30 days ahead. Edit an open quote with `agora quotes update --id quo_... --expected-version 1 ... --idempotency-key edit-1`; provide all `--item` flags when changing its lines. Successful edits advance the version and replace the share URL, so share the returned `quote_url`. The hosted quote page lets the customer review and accept the quote. `agora quotes accept` is a separate authenticated merchant API action that creates an order and payment; it is not evidence that the customer accepted:
 
 ```bash
 agora quotes accept --id quote_... --idempotency-key accept-ada-1

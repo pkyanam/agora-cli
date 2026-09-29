@@ -18,6 +18,7 @@ test("command-specific help is offline and describes each existing command", () 
     [["products", "create", "--help"], /positive integer USD cents/],
     [["products", "update", "--help"], /expected-version/],
     [["quotes", "create", "--help"], /cannot exceed 30 days/],
+    [["quotes", "update", "--help"], /current version/],
     [["quotes", "accept", "--help"], /canonical Agora checkout_url/],
     [["orders", "status", "--help"], /checkout return page is not proof/],
     [["orders", "receipt", "--help"], /unavailable until Agora confirms payment/],
@@ -159,6 +160,7 @@ test("sales workflow commands use the contracted routes, scopes-by-server, and s
     const commands = [
       ["customers", "create", "--name", "Ada", "--email", "ada@example.test", "--idempotency-key", "customer-1"],
       ["quotes", "create", "--customer", "Ada", "--email", "ada@example.test", "--item", "prod_one:2", "--item", "prod_two:1", "--discount", "100", "--expires-at", "2026-10-01T12:00:00.000Z", "--idempotency-key", "quote-1"],
+      ["quotes", "update", "--id", "quote_fixture", "--expected-version", "1", "--customer", "Austin Hedges", "--email", "austin@example.test", "--item", "prod_one:1", "--discount", "0", "--idempotency-key", "quote-edit-1"],
       ["quotes", "accept", "--id", "quote_fixture", "--idempotency-key", "accept-1"],
       ["products", "update", "--id", "prod_fixture", "--expected-version", "2", "--name", "New", "--idempotency-key", "product-edit-1"],
       ["fulfillments", "claim", "--id", "ful_1", "--idempotency-key", "claim-1"],
@@ -183,6 +185,7 @@ test("sales workflow commands use the contracted routes, scopes-by-server, and s
   assert.deepEqual(seen.map(({ method, url, key }) => [method, url, key]), [
     ["POST", "/api/v1/customers", "customer-1"],
     ["POST", "/api/v1/quotes", "quote-1"],
+    ["PUT", "/api/v1/quotes/quote_fixture", "quote-edit-1"],
     ["POST", "/api/v1/quotes/quote_fixture/accept", "accept-1"],
     ["PATCH", "/api/v1/products/prod_fixture", "product-edit-1"],
     ["POST", "/api/v1/fulfillments/ful_1/claim", "claim-1"],
@@ -202,16 +205,21 @@ test("sales workflow commands use the contracted routes, scopes-by-server, and s
     discount_amount: 100,
     expires_at: "2026-10-01T12:00:00.000Z",
   })
-  assert.deepEqual(seen[3].body, { expected_version: 2, name: "New" })
-  assert.equal(seen[5].body.note, "Delivered")
-  assert.equal(seen[6].body.note, "Carrier issue")
-  assert.equal(seen[7].body.note, "Resolved")
+  assert.deepEqual(seen[2].body, {
+    expected_version: 1,
+    customer: { name: "Austin Hedges", email: "austin@example.test" },
+    items: [{ product_id: "prod_one", quantity: 1 }], discount_amount: 0,
+  })
+  assert.deepEqual(seen[4].body, { expected_version: 2, name: "New" })
+  assert.equal(seen[6].body.note, "Delivered")
+  assert.equal(seen[7].body.note, "Carrier issue")
+  assert.equal(seen[8].body.note, "Resolved")
   assert.equal(new URL(outputs[1].quote_url).pathname, "/quote")
   assert.equal(new URL(outputs[1].quote_url).hash, "#opaque-quote-capability")
   assert.ok(!("quote_token" in outputs[1]))
-  assert.equal(new URL(outputs[2].payment.checkout_url).pathname, "/checkout/start")
-  assert.equal(new URL(outputs[2].payment.checkout_url).hash, "#opaque-fragment")
-  assert.ok(!("checkout_token" in outputs[2].payment))
+  assert.equal(new URL(outputs[3].payment.checkout_url).pathname, "/checkout/start")
+  assert.equal(new URL(outputs[3].payment.checkout_url).hash, "#opaque-fragment")
+  assert.ok(!("checkout_token" in outputs[3].payment))
 })
 
 test("auth status checks remote account mode and limits by default and stays offline with --local", async () => {
