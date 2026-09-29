@@ -89,6 +89,74 @@ describe("Agora TypeScript client", () => {
     expect("provider_checkout_url" in page.data[0]).toBe(false)
   })
 
+  test("sales workflow SDK covers versioned products, customers, quotes, orders, and fulfillment safely", async () => {
+    const requests: Array<{ url: string; method: string; key?: string; body?: unknown }> = []
+    globalThis.fetch = (async (input, init) => {
+      const headers = init?.headers as Record<string, string> | undefined
+      requests.push({
+        url: String(input), method: init?.method || "GET", key: headers?.["Idempotency-Key"],
+        body: init?.body ? JSON.parse(String(init.body)) : undefined,
+      })
+      if (String(input).endsWith("/quotes/quote_fixture/accept")) {
+        return Response.json({
+          quote_id: "quote_fixture", order_id: "order_fixture",
+          payment: { id: "pay_fixture", status: "pending", checkout_url: "/checkout/start#complete-capability-fragment", provider_checkout_url: "https://processor.example/private" },
+        })
+      }
+      if (String(input).endsWith("/api/v1/quotes")) {
+        return Response.json({ id: "quote_fixture", quote_url: "/quote#full-public-capability", quote_token: "must-not-leak" })
+      }
+      if (String(input).endsWith("/api/v1/orders/order%2F1/receipt")) {
+        return Response.json({ order_id: "order_fixture", merchant: "Fixture", status: "paid", fulfillment_status: "ready", currency: "usd", total_amount: 4900, paid_at: "2026-09-28T00:00:00.000Z", items: [] })
+      }
+      return Response.json({ id: "fixture", data: [], next_cursor: null, mode: "sandbox", provider_mode: "sandbox", provider_status: "ready", checkout_enabled: true, scopes: ["quotes:write"], limits: { max_amount: 50000, refund_budget: 10000, spent: 0 } })
+    }) as typeof fetch
+
+    const api = new Agora({ apiKey: "fixture", baseUrl: "https://agora.example" })
+    const customer = await api.customers.create({ name: "Ada", email: "ada@example.test" }, { idempotencyKey: "customer-1" })
+    const product = await api.products.update("prod/1", { name: "Edited", expected_version: 3 }, { idempotencyKey: "edit-1" })
+    const quote = await api.quotes.create({
+      customer: { name: "Ada" }, items: [{ product_id: "prod_1", quantity: 2 }], expires_at: "2026-10-01T00:00:00.000Z",
+    }, { idempotencyKey: "quote-1" })
+    const accepted = await api.quotes.accept("quote_fixture", { idempotencyKey: "accept-1" })
+    const customers = await api.customers.list(4, 20)
+    const orders = await api.orders.get("order/1")
+    const receipt = await api.orders.receipt("order/1")
+    const fulfillment = await api.fulfillments.claim("ful_1", { idempotencyKey: "claim-1" })
+    await api.fulfillments.complete("ful_1", { note: "Delivered" }, { idempotencyKey: "complete-1" })
+    const account = await api.account.status()
+
+    expect(customer.id).toBe("fixture")
+    expect(product.id).toBe("fixture")
+    expect(quote.id).toBe("quote_fixture")
+    expect(quote.quote_url).toBe("https://agora.example/quote#full-public-capability")
+    expect("quote_token" in quote).toBe(false)
+    expect(accepted.quote_id).toBe("quote_fixture")
+    expect(accepted.payment.checkout_url).toBe("https://agora.example/checkout/start#complete-capability-fragment")
+    expect("provider_checkout_url" in accepted.payment).toBe(false)
+    expect(customers.data).toEqual([])
+    expect(orders.id).toBe("fixture")
+    expect(receipt.order_id).toBe("order_fixture")
+    expect(receipt.status).toBe("paid")
+    expect(fulfillment.id).toBe("fixture")
+    expect(account.provider_mode).toBe("sandbox")
+    expect(requests.map((request) => [request.method, request.url, request.key])).toEqual([
+      ["POST", "https://agora.example/api/v1/customers", "customer-1"],
+      ["PATCH", "https://agora.example/api/v1/products/prod%2F1", "edit-1"],
+      ["POST", "https://agora.example/api/v1/quotes", "quote-1"],
+      ["POST", "https://agora.example/api/v1/quotes/quote_fixture/accept", "accept-1"],
+      ["GET", "https://agora.example/api/v1/customers?cursor=4&limit=20", undefined],
+      ["GET", "https://agora.example/api/v1/orders/order%2F1", undefined],
+      ["GET", "https://agora.example/api/v1/orders/order%2F1/receipt", undefined],
+      ["POST", "https://agora.example/api/v1/fulfillments/ful_1/claim", "claim-1"],
+      ["POST", "https://agora.example/api/v1/fulfillments/ful_1/complete", "complete-1"],
+      ["GET", "https://agora.example/api/v1/account", undefined],
+    ])
+    expect(requests[2].body).toEqual({ customer: { name: "Ada" }, items: [{ product_id: "prod_1", quantity: 2 }], expires_at: "2026-10-01T00:00:00.000Z" })
+    expect(requests[1].body).toEqual({ name: "Edited", expected_version: 3 })
+    expect(requests[8].body).toEqual({ note: "Delivered" })
+  })
+
   test("reconciles through the documented endpoint without pretending it needs a write key", async () => {
     let requestUrl = ""
     let request: RequestInit | undefined

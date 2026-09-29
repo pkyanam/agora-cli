@@ -1,6 +1,6 @@
 <div align="center">
   <h1>Agora CLI</h1>
-  <p>Manage Agora payments from your terminal.</p>
+  <p>Sell with versioned products, expiring quotes, orders, and fulfillment.</p>
   <p>
     <a href="https://github.com/pkyanam/agora-cli"><img alt="GitHub stars" src="https://img.shields.io/github/stars/pkyanam/agora-cli"></a>
     <a href="https://github.com/pkyanam/agora-cli/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/pkyanam/agora-cli"></a>
@@ -19,22 +19,78 @@ curl -fsSL https://raw.githubusercontent.com/pkyanam/agora-cli/main/install.sh |
 
 ## Connect
 
-Run `agora auth login --url https://your-agora-address` and paste your API key when asked. Get an API key from the Agora Developers page. Then try:
+Run `agora auth login --url https://your-agora-address` and paste your API key when asked. Get an API key from the Agora Developers page. The key's scopes are fixed by the merchant; `agora auth status` reports mode, readiness, scopes, and limits without revealing the key. Use `--local` for an offline configuration check.
 
 ```bash
 agora products list
 ```
 
-Run `agora --help` to see all commands. [Open an issue](https://github.com/pkyanam/agora-cli/issues) if you need help.
+Run `agora --help` for the command list or `agora <resource> <action> --help` for exact fields and examples. [Open an issue](https://github.com/pkyanam/agora-cli/issues) if you need help.
 
-## Share a payment
+## Sell with a quote
 
-`agora payments create` prints the server response as JSON. Share the complete
+Create a customer record when you need to retain customer details, then create a quote from one or more current catalog products:
+
+```bash
+agora customers create --name "Ada Lovelace" --email ada@example.com --idempotency-key customer-ada-1
+agora products list
+agora quotes create --customer "Ada Lovelace" --email ada@example.com \
+  --item prod_...:2 --item prod_...:1 --discount 500 \
+  --idempotency-key quote-ada-1
+```
+
+Quotes snapshot product names and prices and return a `quote_url`; share that exact complete URL with the customer. They expire after seven days by default; an explicit `--expires-at` may be no more than 30 days ahead. Review the quote response before sharing or accepting it. The customer reviews and accepts the quote on the hosted quote page; acceptance creates an order and payment once:
+
+```bash
+agora quotes accept --id quote_... --idempotency-key accept-ada-1
+agora orders get --id order_...
+agora orders status --id order_...
+agora orders receipt --id order_... # only after Agora confirms payment
+```
+
+Acceptance can create a live checkout. Check `agora auth status` first, and only accept when the merchant/customer authorized the order. An unknown result is not a reason to use a new key: inspect the quote/order and retry only with the same key.
+
+## Payment links
+
+`agora payments create` and `agora quotes accept` print the server response as JSON. Share the complete
 `checkout_url` field with the buyer exactly as returned. Do not construct a URL
 from the payment `id`, shorten the URL, or use a processor checkout URL. The
 Agora URL is the payer-facing link and can contain a capability in its fragment.
 The CLI preserves the full URL and omits processor-only checkout URLs.
 
+## Fulfill an order
+
+A verified provider success moves an order to `paid` and its fulfillment to `ready`. Pending checkout, a return-page visit, or an unverified webhook does not unlock fulfillment. Claim work before performing it, then mark it complete afterward:
+
+```bash
+agora orders get --id order_...
+agora fulfillments get --id ful_...
+agora fulfillments claim --id ful_... --idempotency-key claim-ful-1
+agora fulfillments complete --id ful_... --note "Shipped tracking …" --idempotency-key complete-ful-1
+```
+
+If work cannot be completed, use `agora fulfillments fail --id ful_... --note "Reason" --idempotency-key fail-ful-1`; after resolving the issue, `agora fulfillments retry --id ful_... --note "Resolution" --idempotency-key retry-ful-1` returns a paid order's failed task to `ready`. These commands update Agora's workflow state; they do not run external shipping or delivery integrations. Reads and writes require the corresponding API-key scopes. Existing API keys do not gain new scopes automatically.
+
 Agent instructions for Agora integrations: [`skills/agora/SKILL.md`](skills/agora/SKILL.md).
 To install it for a supported coding agent, run `npx skills add https://github.com/pkyanam/agora-cli --skill agora` (see the [Skills CLI](https://www.skills.sh/docs/cli)).
 After installing the Agora CLI, `agora --skill` prints the same instructions to standard output without reading credentials or configuration.
+
+## TypeScript SDK
+
+The dependency-free TypeScript client exposes the same scoped sales workflow. Mutations require an explicit stable idempotency key; the SDK does not retry writes automatically.
+
+```ts
+import { Agora } from "agora-cli/sdk"
+
+const agora = new Agora({ url: process.env.AGORA_URL!, apiKey: process.env.AGORA_API_KEY! })
+const account = await agora.account.status()
+const quote = await agora.quotes.create({
+  customer: { name: "Ada Lovelace", email: "ada@example.com" },
+  items: [{ product_id: "prod_...", quantity: 1 }],
+}, { idempotencyKey: "quote-ada-1" })
+// Share quote.quote_url verbatim. Acceptance creates an order and payment.
+const accepted = await agora.quotes.accept(quote.id, { idempotencyKey: "accept-ada-1" })
+// Share accepted.payment.checkout_url verbatim; never construct it from an ID.
+```
+
+Check the account mode, readiness, scopes, and limits before writes. Use `orders.receipt(id)` only after the order is paid; the server returns `order_not_paid` otherwise.

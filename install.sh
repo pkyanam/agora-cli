@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO="pkyanam/agora-cli"
-CLI_SHA256="53f5fea996482e0164f329782d0b92bdf72c10607f5ddef37d42469693b772bb"
+CLI_SHA256="492edaa0c0954bd4f4a3773d409bcd57179050448cc433f9ace5f8aca8c694f6"
 MIN_NODE_MAJOR=20
 MIN_NODE_MINOR=9
 DEST_DIR="${AGORA_INSTALL_DIR:-${HOME:?Set HOME before installing}/.local/bin}"

@@ -11,6 +11,79 @@ export type Product = {
   amount: number
   currency: "usd"
   created_at: string
+  version?: number
+  archived_at?: string | null
+}
+
+export type Customer = { id: string; name: string; email: string | null; created_at: string; updated_at?: string }
+export type QuoteItem = { id?: string; quote_id?: string; product_id: string; product_name: string; catalog_version: number; quantity: number; unit_amount: number; line_total: number }
+export type Quote = {
+  id: string
+  customer_id: string
+  customer_name: string
+  customer_email: string | null
+  items: QuoteItem[]
+  subtotal_amount: number
+  discount_amount: number
+  total_amount: number
+  currency: "usd"
+  status: "open" | "accepted" | "expired" | "cancelled"
+  expires_at: string
+  quote_url?: string
+  accepted_at: string | null
+  order_id: string | null
+  created_at: string
+}
+export type Order = {
+  id: string
+  quote_id: string | null
+  customer_id: string
+  customer_name: string
+  customer_email: string | null
+  status: "awaiting_payment" | "paid" | "cancelled"
+  total_amount: number
+  currency: "usd"
+  payment_id: string | null
+  fulfillment_status?: Fulfillment["status"]
+  created_at: string
+  paid_at: string | null
+  items?: OrderItem[]
+}
+export type OrderItem = { id: string; order_id: string; product_id: string; product_name: string; catalog_version: number; quantity: number; unit_amount: number; line_total: number }
+export type OrderReceipt = {
+  order_id: string
+  merchant: string
+  status: "paid"
+  fulfillment_status: Fulfillment["status"] | null
+  currency: "usd"
+  total_amount: number
+  paid_at: string
+  items: Array<Pick<OrderItem, "product_name" | "quantity" | "unit_amount" | "line_total"> & { discount_amount: number; net_total: number }>
+}
+export type Fulfillment = {
+  id: string
+  order_id: string
+  payment_id: string
+  status: "awaiting_payment" | "ready" | "claimed" | "completed" | "failed"
+  claimed_by: string | null
+  claimed_at: string | null
+  completed_at: string | null
+  note: string | null
+  created_at: string
+  updated_at: string
+}
+export type AccountStatus = {
+  mode: Provider
+  provider_mode: ProviderMode
+  provider_status: string
+  checkout_enabled: boolean
+  scopes: string[]
+  limits: { max_amount: number; refund_budget: number; spent: number } | null
+}
+export type AcceptedQuote = {
+  quote_id: string
+  order_id: string
+  payment: CreatedPayment
 }
 
 export type Payment = {
@@ -32,7 +105,7 @@ export type Payment = {
 export type CreatedPayment = Payment & {
   checkout_url: string
   provider: Provider
-  provider_mode?: "test" | "live"
+  provider_mode?: "test" | "live" | null
 }
 
 export type Refund = {
@@ -122,11 +195,11 @@ export class Agora {
   }
 
   private async request<T>(
-    method: "GET" | "POST",
+    method: "GET" | "POST" | "PATCH",
     path: string,
     body?: unknown,
     options?: MutationOptions,
-    idempotencyRequired = method === "POST",
+    idempotencyRequired = method !== "GET",
   ): Promise<T> {
     if (idempotencyRequired && !options?.idempotencyKey) {
       throw new Error("An idempotencyKey is required for writes. Reuse it when retrying the same operation.")
@@ -145,7 +218,7 @@ export class Agora {
         signal: AbortSignal.timeout(15000),
       })
     } catch (error) {
-      const outcomeUnknown = method === "POST"
+      const outcomeUnknown = method !== "GET"
       throw new AgoraError(
         outcomeUnknown
           ? idempotencyRequired
@@ -163,7 +236,7 @@ export class Agora {
     try {
       result = await response.json()
     } catch {
-      const outcomeUnknown = method === "POST"
+      const outcomeUnknown = method !== "GET"
       throw new AgoraError(
         outcomeUnknown
           ? idempotencyRequired
@@ -180,7 +253,7 @@ export class Agora {
     if (!response.ok) {
       const error = result as ApiErrorBody
       const unknownFromServer = error.error?.code === "provider_outcome_unknown"
-      const outcomeUnknown = method === "POST" && (response.status >= 500 || unknownFromServer)
+      const outcomeUnknown = method !== "GET" && (response.status >= 500 || unknownFromServer)
       throw new AgoraError(
         outcomeUnknown
           ? idempotencyRequired
@@ -194,15 +267,68 @@ export class Agora {
       )
     }
 
-    return withoutProviderCheckoutUrls(result) as T
+    return withoutProviderCheckoutUrls(result, this.baseUrl) as T
   }
 
   products = {
-    list: (cursor = 0) => this.request<Page<Product>>("GET", `products?cursor=${validCursor(cursor)}`),
+    list: (cursor = 0, limit?: number) => this.request<Page<Product>>("GET", pageQuery("products", cursor, limit)),
     create: (
       data: { name: string; amount: number; description?: string; currency?: "usd" },
       options: MutationOptions,
     ) => this.request<Product>("POST", "products", data, options),
+    update: (
+      id: string,
+      data: { name?: string; description?: string; amount?: number; expected_version: number },
+      options: MutationOptions,
+    ) => this.request<Product>("PATCH", `products/${encodeURIComponent(id)}`, data, options),
+  }
+
+  quotes = {
+    list: (cursor = 0, limit?: number) => this.request<Page<Quote>>("GET", pageQuery("quotes", cursor, limit)),
+    get: (id: string) => this.request<Quote>("GET", `quotes/${encodeURIComponent(id)}`),
+    create: (
+      data: { customer: { name: string; email?: string }; items: Array<{ product_id: string; quantity: number }>; discount_amount?: number; expires_at?: string },
+      options: MutationOptions,
+    ) => this.request<Quote>("POST", "quotes", data, options),
+    accept: (id: string, options: MutationOptions) => this.request<AcceptedQuote>(
+      "POST", `quotes/${encodeURIComponent(id)}/accept`, {}, options,
+    ),
+  }
+
+  customers = {
+    list: (cursor = 0, limit?: number) => this.request<Page<Customer>>("GET", pageQuery("customers", cursor, limit)),
+    get: (id: string) => this.request<Customer>("GET", `customers/${encodeURIComponent(id)}`),
+    create: (data: { name: string; email?: string }, options: MutationOptions) =>
+      this.request<Customer>("POST", "customers", data, options),
+  }
+
+  orders = {
+    list: (cursor = 0, limit?: number) => this.request<Page<Order>>("GET", pageQuery("orders", cursor, limit)),
+    get: (id: string) => this.request<Order>("GET", `orders/${encodeURIComponent(id)}`),
+    status: (id: string) => this.request<Order>("GET", `orders/${encodeURIComponent(id)}`),
+    receipt: (id: string) => this.request<OrderReceipt>("GET", `orders/${encodeURIComponent(id)}/receipt`),
+  }
+
+  fulfillments = {
+    list: (cursor = 0, limit?: number, status?: Fulfillment["status"]) =>
+      this.request<Page<Fulfillment>>("GET", pageQuery("fulfillments", cursor, limit, status ? { status } : undefined)),
+    get: (id: string) => this.request<Fulfillment>("GET", `fulfillments/${encodeURIComponent(id)}`),
+    claim: (id: string, options: MutationOptions) => this.request<Fulfillment>(
+      "POST", `fulfillments/${encodeURIComponent(id)}/claim`, {}, options,
+    ),
+    complete: (id: string, data: { note?: string }, options: MutationOptions) => this.request<Fulfillment>(
+      "POST", `fulfillments/${encodeURIComponent(id)}/complete`, data, options,
+    ),
+    fail: (id: string, data: { note?: string }, options: MutationOptions) => this.request<Fulfillment>(
+      "POST", `fulfillments/${encodeURIComponent(id)}/fail`, data, options,
+    ),
+    retry: (id: string, data: { note?: string }, options: MutationOptions) => this.request<Fulfillment>(
+      "POST", `fulfillments/${encodeURIComponent(id)}/retry`, data, options,
+    ),
+  }
+
+  account = {
+    status: () => this.request<AccountStatus>("GET", "account"),
   }
 
   payments = {
@@ -232,25 +358,39 @@ export class Agora {
   }
 
   events = {
-    list: (cursor = 0) => this.request<Page<{
+    list: (cursor = 0, limit?: number) => this.request<Page<{
       id: string
       type: string
       actor: string
       object_id: string
       data: Record<string, unknown>
       created_at: string
-    }>>("GET", `events?cursor=${validCursor(cursor)}`),
+    }>>("GET", pageQuery("events", cursor, limit)),
   }
 }
 
 /** Strip processor-only checkout links before exposing API responses to callers. */
-function withoutProviderCheckoutUrls(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(withoutProviderCheckoutUrls)
+function withoutProviderCheckoutUrls(value: unknown, baseUrl: string): unknown {
+  if (Array.isArray(value)) return value.map((item) => withoutProviderCheckoutUrls(item, baseUrl))
   if (!value || typeof value !== "object") return value
-  return Object.fromEntries(Object.entries(value).filter(([key]) => key !== "provider_checkout_url").map(([key, item]) => [key, withoutProviderCheckoutUrls(item)]))
+  return Object.fromEntries(Object.entries(value)
+    .filter(([key]) => !["provider_checkout_url", "checkout_token", "quote_token"].includes(key))
+    .map(([key, item]) => [key, (key === "checkout_url" || key === "quote_url") && typeof item === "string" && item.startsWith("/")
+      ? new URL(item, `${baseUrl}/`).href
+      : withoutProviderCheckoutUrls(item, baseUrl)]))
 }
 
 function validCursor(cursor: number) {
   if (!Number.isSafeInteger(cursor) || cursor < 0) throw new Error("cursor must be a non-negative integer.")
   return cursor
+}
+
+function pageQuery(resource: string, cursor: number, limit?: number, filters?: Record<string, string>) {
+  const params = new URLSearchParams({ cursor: String(validCursor(cursor)) })
+  if (limit !== undefined) {
+    if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("limit must be a positive integer.")
+    params.set("limit", String(limit))
+  }
+  for (const [key, value] of Object.entries(filters || {})) params.set(key, value)
+  return `${resource}?${params}`
 }
