@@ -13,13 +13,14 @@ Use the installed `agora` CLI and its JSON output for Agora catalog, quote, orde
 - Use `agora quotes create` with one stable idempotency key. Review the returned immutable product/price snapshots and expiry; do not silently change quantity, discount, or expiry after the customer approved the quote.
 - Share the complete `quote_url` returned by Agora exactly as provided, preserving its full fragment. Never build a quote URL from its ID or expose the underlying capability token.
 - If Agora does not return a `quote_url`, report that the customer link is unavailable and stop; do not construct one from the quote ID or guess a replacement.
-- A quote is not a payment. Share Agora's exact `quote_url` so the customer can review and accept it. Do not call `agora quotes accept` unless the merchant/customer authorized creating the order and payment. Check `agora auth status` first; live mode may create a checkout that can charge the customer.
-- Quote acceptance is an idempotent write. If its result is unknown, inspect the quote and order, then retry only with the same idempotency key. Never accept again with a new key to recover a response.
+- A quote is not a payment. Share Agora's exact `quote_url` so the customer can review and accept it themselves on the hosted quote page.
+- `agora quotes accept` is an authenticated merchant API action that creates an order and payment. Use it only when the merchant explicitly authorized that action; it does not establish that the customer accepted the quote. Check `agora auth status` first; live mode may create a checkout that can charge the customer.
+- API quote acceptance is an idempotent write. If its result is unknown, inspect the quote and order, then retry only with the same idempotency key. Never accept again with a new key to recover a response.
 
 ## Checkout links
 
 - For a created payment, use the complete `checkout_url` returned by Agora exactly as provided. Preserve the entire URL, including its fragment. Give that URL to the buyer verbatim.
-- After quote acceptance, use `payment.checkout_url` from the response and give that complete value to the buyer verbatim.
+- After authorized API quote acceptance, use `payment.checkout_url` from the response and give that complete value to the buyer verbatim.
 - Never construct a checkout path from a `payment.id`, shorten or truncate a checkout URL, or substitute a Stripe/provider URL. Payment IDs identify records; they are not checkout links.
 - If the response has no `checkout_url`, or the returned URL is unavailable or rejected, say so and stop. Do not guess a replacement. A payment get/list response may not include a share link.
 - If a create request's outcome is unknown, inspect the payment state and retry only with the same idempotency key. Do not create another payment to recover the URL.

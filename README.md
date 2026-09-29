@@ -39,7 +39,7 @@ agora quotes create --customer "Ada Lovelace" --email ada@example.com \
   --idempotency-key quote-ada-1
 ```
 
-Quotes snapshot product names and prices and return a `quote_url`; share that exact complete URL with the customer. They expire after seven days by default; an explicit `--expires-at` may be no more than 30 days ahead. Review the quote response before sharing or accepting it. The customer reviews and accepts the quote on the hosted quote page; acceptance creates an order and payment once:
+Quotes snapshot product names and prices and return a `quote_url`; share that exact complete URL with the customer. They expire after seven days by default; an explicit `--expires-at` may be no more than 30 days ahead. The hosted quote page lets the customer review and accept the quote. `agora quotes accept` is a separate authenticated merchant API action that creates an order and payment; it is not evidence that the customer accepted:
 
 ```bash
 agora quotes accept --id quote_... --idempotency-key accept-ada-1
@@ -48,7 +48,7 @@ agora orders status --id order_...
 agora orders receipt --id order_... # only after Agora confirms payment
 ```
 
-Acceptance can create a live checkout. Check `agora auth status` first, and only accept when the merchant/customer authorized the order. An unknown result is not a reason to use a new key: inspect the quote/order and retry only with the same key.
+API acceptance can create a live checkout. Check `agora auth status` first, and use this command only when the merchant explicitly authorized creating the order and payment. If the merchant wants customer acceptance, share the complete `quote_url` instead. An unknown result is not a reason to use a new key: inspect the quote/order and retry only with the same key.
 
 ## Payment links
 
@@ -82,13 +82,14 @@ The dependency-free TypeScript client in [`sdk/agora.ts`](sdk/agora.ts) exposes 
 ```ts
 import { Agora } from "./lib/agora.ts" // copy sdk/agora.ts here
 
-const agora = new Agora({ url: process.env.AGORA_URL!, apiKey: process.env.AGORA_API_KEY! })
+const agora = new Agora({ baseUrl: process.env.AGORA_URL!, apiKey: process.env.AGORA_API_KEY! })
 const account = await agora.account.status()
 const quote = await agora.quotes.create({
   customer: { name: "Ada Lovelace", email: "ada@example.com" },
   items: [{ product_id: "prod_...", quantity: 1 }],
 }, { idempotencyKey: "quote-ada-1" })
-// Share quote.quote_url verbatim. Acceptance creates an order and payment.
+// Share quote.quote_url verbatim. The call below is merchant-authorized API acceptance,
+// creating an order and payment without recording customer consent.
 const accepted = await agora.quotes.accept(quote.id, { idempotencyKey: "accept-ada-1" })
 // Share accepted.payment.checkout_url verbatim; never construct it from an ID.
 ```
