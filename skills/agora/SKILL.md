@@ -12,6 +12,7 @@ Use the installed `agora` CLI and its JSON output for Agora catalog, quote, orde
 - Read the product catalog and customer record before quoting. Use quote line items with positive integer quantities and pass the customer's name/email only when needed for the transaction.
 - Use `agora quotes create` with one stable idempotency key. Review the returned immutable product/price snapshots and expiry; do not silently change quantity, discount, or expiry after the customer approved the quote.
 - Share the complete `quote_url` returned by Agora exactly as provided, preserving its full fragment. Never build a quote URL from its ID or expose the underlying capability token.
+- If Agora does not return a `quote_url`, report that the customer link is unavailable and stop; do not construct one from the quote ID or guess a replacement.
 - A quote is not a payment. Share Agora's exact `quote_url` so the customer can review and accept it. Do not call `agora quotes accept` unless the merchant/customer authorized creating the order and payment. Check `agora auth status` first; live mode may create a checkout that can charge the customer.
 - Quote acceptance is an idempotent write. If its result is unknown, inspect the quote and order, then retry only with the same idempotency key. Never accept again with a new key to recover a response.
 
